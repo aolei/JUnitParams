@@ -24,6 +24,7 @@ public class TestMethod {
     private Parameters parametersAnnotation;
     private FileParameters fileParametersAnnotation;
     private Object[] params;
+    private final String PARAMETER_COMMAND_LINE_OVERRIDE = "parameters";
 
     public TestMethod(FrameworkMethod method, TestClass testClass) {
         this.frameworkMethod = method;
@@ -114,7 +115,12 @@ public class TestMethod {
         if (params != null)
             return params;
 
-        if (parametersAnnotation != null) {
+        //Check command line input first
+        if (System.getProperty(PARAMETER_COMMAND_LINE_OVERRIDE) != null){
+            params = System.getProperty(PARAMETER_COMMAND_LINE_OVERRIDE).split(";");
+        }
+
+        else if (parametersAnnotation != null) {
             params = paramsFromValue();
 
             if (params.length == 0)
