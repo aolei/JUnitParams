@@ -2,6 +2,8 @@ package junitparams;
 
 import java.util.*;
 
+import org.junit.internal.AssumptionViolatedException;
+import org.junit.internal.runners.model.EachTestNotifier;
 import org.junit.runner.*;
 import org.junit.runner.notification.*;
 import org.junit.runners.*;
@@ -372,10 +374,24 @@ public class JUnitParamsRunner extends BlockJUnit4ClassRunner {
 
     private ParameterisedTestClassRunner parameterisedRunner;
     private Description description;
+    private int retryCount = 2;
+    private int failedAttempts = 0;
 
     public JUnitParamsRunner(Class<?> klass) throws InitializationError {
         super(klass);
         parameterisedRunner = new ParameterisedTestClassRunner(getTestClass());
+        try {
+            String systemRetry = System.getProperty("RETRY_COUNT");
+            String envRetry = System.getenv("RETRY_COUNT");
+            if (systemRetry != null) {
+                retryCount = Integer.parseInt(systemRetry);
+            }
+            else if( envRetry != null) {
+                retryCount = Integer.parseInt(envRetry);
+            }
+        } catch (NumberFormatException e) {
+            e.printStackTrace();
+        }
     }
 
     protected void collectInitializationErrors(List<Throwable> errors) {
@@ -392,7 +408,7 @@ public class JUnitParamsRunner extends BlockJUnit4ClassRunner {
         if (parameterisedRunner.shouldRun(testMethod))
             parameterisedRunner.runParameterisedTest(testMethod, methodBlock(method), notifier);
         else
-            super.runChild(method, notifier);
+            runTestUnit(methodBlock(method), describeChild(method), notifier);
     }
 
     private boolean handleIgnored(FrameworkMethod method, RunNotifier notifier) {
@@ -449,5 +465,35 @@ public class JUnitParamsRunner extends BlockJUnit4ClassRunner {
      */
     public static Object[] $(Object... params) {
         return params;
+    }
+
+    protected final void runTestUnit(Statement statement, Description description,
+                                     RunNotifier notifier) {
+        EachTestNotifier eachNotifier = new EachTestNotifier(notifier, description);
+        eachNotifier.fireTestStarted();
+        try {
+            statement.evaluate();
+        } catch (AssumptionViolatedException e) {
+            eachNotifier.addFailedAssumption(e);
+        } catch (Throwable e) {
+            retry(eachNotifier, statement, e);
+        } finally {
+            eachNotifier.fireTestFinished();
+        }
+    }
+
+    public void retry(EachTestNotifier notifier, Statement statement, Throwable currentThrowable) {
+        Throwable caughtThrowable = currentThrowable;
+        failedAttempts = 0;
+        while (retryCount > failedAttempts) {
+            try {
+                statement.evaluate();
+                return;
+            } catch (Throwable t) {
+                failedAttempts++;
+                caughtThrowable = t;
+            }
+        }
+        notifier.addFailure(caughtThrowable);
     }
 }
