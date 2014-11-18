@@ -18,9 +18,23 @@ public class ParameterisedTestMethodRunner {
 
     public final TestMethod method;
     private int count;
+    protected int retryCount = 2;
+    protected int failedAttempts = 0;
 
     public ParameterisedTestMethodRunner(TestMethod testMethod) {
         this.method = testMethod;
+        try {
+            String systemRetry = System.getProperty("RETRY_COUNT");
+            String envRetry = System.getenv("RETRY_COUNT");
+            if (systemRetry != null) {
+                retryCount = Integer.parseInt(systemRetry);
+            }
+            else if( envRetry != null) {
+                retryCount = Integer.parseInt(envRetry);
+            }
+        } catch (NumberFormatException e) {
+            e.printStackTrace();
+        }
     }
 
     public int nextCount() {
@@ -50,7 +64,7 @@ public class ParameterisedTestMethodRunner {
         } catch (AssumptionViolatedException e) {
             eachNotifier.addFailedAssumption(e);
         } catch (Throwable e) {
-            eachNotifier.addFailure(e);
+            retry(eachNotifier, methodInvoker, e);
         } finally {
             eachNotifier.fireTestFinished();
         }
@@ -107,4 +121,20 @@ public class ParameterisedTestMethodRunner {
             return null;
         }
     }
+
+    private void retry(EachTestNotifier notifier, Statement statement, Throwable currentThrowable) {
+        Throwable caughtThrowable = currentThrowable;
+        failedAttempts = 0;
+        while (retryCount > failedAttempts) {
+            try {
+                statement.evaluate();
+                return;
+            } catch (Throwable t) {
+                failedAttempts++;
+                caughtThrowable = t;
+            }
+        }
+        notifier.addFailure(caughtThrowable);
+    }
+
 }
